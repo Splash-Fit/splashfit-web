@@ -770,6 +770,58 @@ function Reportes({ data }) {
     setMsg("");
   };
 
+  // Arma y descarga el listado general de faltas (para pasar a Socio Plus)
+  const descargarFaltas = () => {
+    const filasFaltas = [];
+    const totalPorAlumno = {}; // dni+nombre -> resumen
+    data.activities.forEach((act) => {
+      act.schedules.forEach((h) => {
+        const activos = (data.students[h.id] || []).filter((s) => s.active);
+        const regs = data.attendance[h.id] || {};
+        const fechas = Object.keys(regs).sort();
+        fechas.forEach((f) => {
+          const presentes = regs[f] || [];
+          activos.forEach((s) => {
+            if (!presentes.includes(s.id)) {
+              filasFaltas.push({
+                "Fecha": fmtFecha(f),
+                "Actividad": act.name,
+                "Horario": h.label,
+                "Alumno": nombreCompleto(s),
+                "DNI": s.dni || "",
+              });
+              const clave = (s.dni || "") + "|" + nombreCompleto(s);
+              if (!totalPorAlumno[clave]) {
+                totalPorAlumno[clave] = { "Alumno": nombreCompleto(s), "DNI": s.dni || "", "Actividad": act.name, "Total de faltas": 0 };
+              }
+              totalPorAlumno[clave]["Total de faltas"] += 1;
+            }
+          });
+        });
+      });
+    });
+    if (filasFaltas.length === 0) {
+      setMsg("Todavía no hay faltas registradas para armar el listado.");
+      return;
+    }
+    // Ordena el detalle por fecha (dd/mm/aaaa -> aaaa-mm-dd para comparar) y luego por alumno
+    filasFaltas.sort((a, b) => {
+      const fa = a["Fecha"].split("/").reverse().join("-");
+      const fb = b["Fecha"].split("/").reverse().join("-");
+      return fa === fb ? a["Alumno"].localeCompare(b["Alumno"]) : fa.localeCompare(fb);
+    });
+    const filasResumen = Object.values(totalPorAlumno).sort((a, b) => a["Alumno"].localeCompare(b["Alumno"]));
+    const wb = XLSX.utils.book_new();
+    const ws1 = XLSX.utils.json_to_sheet(filasFaltas);
+    ws1["!cols"] = [{ wch: 12 }, { wch: 22 }, { wch: 18 }, { wch: 26 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, ws1, "Faltas por fecha");
+    const ws2 = XLSX.utils.json_to_sheet(filasResumen);
+    ws2["!cols"] = [{ wch: 26 }, { wch: 12 }, { wch: 22 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, ws2, "Total por alumno");
+    XLSX.writeFile(wb, `faltas-splash-fit-${hoy()}.xlsx`);
+    setMsg("");
+  };
+
   return (
     <div style={S.section}>
       <div style={S.card}>
@@ -784,6 +836,20 @@ function Reportes({ data }) {
         </div>
         <button style={{ ...S.btnPrimary, marginTop: 10 }} onClick={descargarBalance}>
           ⬇ Descargar balance (Excel)
+        </button>
+      </div>
+      <div style={S.card}>
+        <div style={S.rowBetween}>
+          <div>
+            <div style={S.cardTitle}>Listado de faltas</div>
+            <p style={{ ...S.hint, margin: 0 }}>
+              Descarga una planilla Excel con todas las faltas registradas (fecha,
+              actividad, horario, alumno y DNI), lista para pasar a Socio Plus.
+            </p>
+          </div>
+        </div>
+        <button style={{ ...S.btnPrimary, marginTop: 10 }} onClick={descargarFaltas}>
+          ⬇ Descargar listado de faltas (Excel)
         </button>
         {msg && <div style={{ ...S.loginErr, marginTop: 10 }}>{msg}</div>}
       </div>
