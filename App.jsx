@@ -773,12 +773,13 @@ function Reportes({ data }) {
   // Arma y descarga el listado general de faltas (para pasar a Socio Plus)
   const descargarFaltas = () => {
     const filasFaltas = [];
-    const totalPorAlumno = {}; // dni+nombre -> resumen
+    const filasAsistencia = []; // por actividad: cada alumno con su cantidad de asistencias
     data.activities.forEach((act) => {
       act.schedules.forEach((h) => {
         const activos = (data.students[h.id] || []).filter((s) => s.active);
         const regs = data.attendance[h.id] || {};
         const fechas = Object.keys(regs).sort();
+        // Detalle de faltas fecha por fecha
         fechas.forEach((f) => {
           const presentes = regs[f] || [];
           activos.forEach((s) => {
@@ -790,34 +791,50 @@ function Reportes({ data }) {
                 "Alumno": nombreCompleto(s),
                 "DNI": s.dni || "",
               });
-              const clave = (s.dni || "") + "|" + nombreCompleto(s);
-              if (!totalPorAlumno[clave]) {
-                totalPorAlumno[clave] = { "Alumno": nombreCompleto(s), "DNI": s.dni || "", "Actividad": act.name, "Total de faltas": 0 };
-              }
-              totalPorAlumno[clave]["Total de faltas"] += 1;
             }
           });
         });
+        // Resumen: cada alumno activo con cuántas veces asistió sobre las clases dadas
+        if (fechas.length > 0) {
+          activos.forEach((s) => {
+            const vino = fechas.filter((f) => (regs[f] || []).includes(s.id)).length;
+            filasAsistencia.push({
+              "Actividad": act.name,
+              "Horario": h.label,
+              "Alumno": nombreCompleto(s),
+              "DNI": s.dni || "",
+              "Clases dadas": fechas.length,
+              "Asistió": vino,
+              "Faltó": fechas.length - vino,
+              "Asistencia": `${vino}/${fechas.length}`,
+              "Asistencia %": Math.round((vino / fechas.length) * 100),
+            });
+          });
+        }
       });
     });
-    if (filasFaltas.length === 0) {
-      setMsg("Todavía no hay faltas registradas para armar el listado.");
+    if (filasAsistencia.length === 0) {
+      setMsg("Todavía no hay asistencias registradas para armar el listado.");
       return;
     }
-    // Ordena el detalle por fecha (dd/mm/aaaa -> aaaa-mm-dd para comparar) y luego por alumno
+    // Detalle de faltas ordenado por fecha (dd/mm/aaaa -> aaaa-mm-dd para comparar) y luego por alumno
     filasFaltas.sort((a, b) => {
       const fa = a["Fecha"].split("/").reverse().join("-");
       const fb = b["Fecha"].split("/").reverse().join("-");
       return fa === fb ? a["Alumno"].localeCompare(b["Alumno"]) : fa.localeCompare(fb);
     });
-    const filasResumen = Object.values(totalPorAlumno).sort((a, b) => a["Alumno"].localeCompare(b["Alumno"]));
+    // Resumen agrupado por actividad, horario y alumno
+    filasAsistencia.sort((a, b) =>
+      a["Actividad"].localeCompare(b["Actividad"]) ||
+      a["Horario"].localeCompare(b["Horario"]) ||
+      a["Alumno"].localeCompare(b["Alumno"]));
     const wb = XLSX.utils.book_new();
-    const ws1 = XLSX.utils.json_to_sheet(filasFaltas);
-    ws1["!cols"] = [{ wch: 12 }, { wch: 22 }, { wch: 18 }, { wch: 26 }, { wch: 12 }];
-    XLSX.utils.book_append_sheet(wb, ws1, "Faltas por fecha");
-    const ws2 = XLSX.utils.json_to_sheet(filasResumen);
-    ws2["!cols"] = [{ wch: 26 }, { wch: 12 }, { wch: 22 }, { wch: 14 }];
-    XLSX.utils.book_append_sheet(wb, ws2, "Total por alumno");
+    const ws1 = XLSX.utils.json_to_sheet(filasAsistencia);
+    ws1["!cols"] = [{ wch: 22 }, { wch: 18 }, { wch: 26 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 11 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, ws1, "Asistencia por actividad");
+    const ws2 = XLSX.utils.json_to_sheet(filasFaltas);
+    ws2["!cols"] = [{ wch: 12 }, { wch: 22 }, { wch: 18 }, { wch: 26 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, ws2, "Faltas por fecha");
     XLSX.writeFile(wb, `faltas-splash-fit-${hoy()}.xlsx`);
     setMsg("");
   };
