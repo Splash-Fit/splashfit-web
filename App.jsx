@@ -713,6 +713,26 @@ function Reportes({ data }) {
   const [detalle, setDetalle] = useState(null); // horarioId con resumen por alumno abierto
   const [msg, setMsg] = useState("");
 
+  // ---- Filtro por mes ----
+  // Junta todos los meses (YYYY-MM) que tienen asistencia cargada
+  const mesesDisponibles = (() => {
+    const set = new Set();
+    Object.values(data.attendance || {}).forEach((regs) => {
+      Object.keys(regs || {}).forEach((f) => set.add(f.slice(0, 7)));
+    });
+    return [...set].sort().reverse();
+  })();
+  const [mesSel, setMesSel] = useState("todos");
+  // Deja solo las fechas del mes elegido (o todas si es "todos")
+  const filtrarFechas = (fechas) =>
+    mesSel === "todos" ? fechas : fechas.filter((f) => f.slice(0, 7) === mesSel);
+  const NOMBRE_MES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+  const etiquetaMes = (ym) => {
+    const [y, m] = ym.split("-");
+    return `${NOMBRE_MES[parseInt(m, 10) - 1]} ${y}`;
+  };
+  const sufijoArchivo = mesSel === "todos" ? hoy() : mesSel;
+
   // Arma y descarga la planilla Excel con el balance completo
   const descargarBalance = () => {
     const filasClases = [];
@@ -723,7 +743,7 @@ function Reportes({ data }) {
         const alumnos = data.students[h.id] || [];
         const activos = alumnos.filter((s) => s.active);
         const regs = data.attendance[h.id] || {};
-        const fechas = Object.keys(regs).sort();
+        const fechas = filtrarFechas(Object.keys(regs).sort());
         let pres = 0;
         fechas.forEach((f) => (pres += regs[f].length));
         const posibles = fechas.length * activos.length;
@@ -766,7 +786,7 @@ function Reportes({ data }) {
     const ws2 = XLSX.utils.json_to_sheet(filasAlumnos);
     ws2["!cols"] = [{ wch: 22 }, { wch: 18 }, { wch: 26 }, { wch: 12 }, { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 12 }];
     XLSX.utils.book_append_sheet(wb, ws2, "Por alumno");
-    XLSX.writeFile(wb, `balance-splash-fit-${hoy()}.xlsx`);
+    XLSX.writeFile(wb, `balance-splash-fit-${sufijoArchivo}.xlsx`);
     setMsg("");
   };
 
@@ -778,7 +798,7 @@ function Reportes({ data }) {
       act.schedules.forEach((h) => {
         const activos = (data.students[h.id] || []).filter((s) => s.active);
         const regs = data.attendance[h.id] || {};
-        const fechas = Object.keys(regs).sort();
+        const fechas = filtrarFechas(Object.keys(regs).sort());
         // Detalle de faltas fecha por fecha
         fechas.forEach((f) => {
           const presentes = regs[f] || [];
@@ -835,12 +855,25 @@ function Reportes({ data }) {
     const ws2 = XLSX.utils.json_to_sheet(filasFaltas);
     ws2["!cols"] = [{ wch: 12 }, { wch: 22 }, { wch: 18 }, { wch: 26 }, { wch: 12 }];
     XLSX.utils.book_append_sheet(wb, ws2, "Faltas por fecha");
-    XLSX.writeFile(wb, `faltas-splash-fit-${hoy()}.xlsx`);
+    XLSX.writeFile(wb, `faltas-splash-fit-${sufijoArchivo}.xlsx`);
     setMsg("");
   };
 
   return (
     <div style={S.section}>
+      <div style={S.card}>
+        <div style={S.cardTitle}>Filtrar por mes</div>
+        <p style={{ ...S.hint, marginTop: 0 }}>
+          Elegí un mes para que los reportes y las descargas muestren solo ese mes,
+          sin mezclar con los demás.
+        </p>
+        <select style={S.input} value={mesSel} onChange={(e) => setMesSel(e.target.value)}>
+          <option value="todos">Todos los meses (total)</option>
+          {mesesDisponibles.map((ym) => (
+            <option key={ym} value={ym}>{etiquetaMes(ym)}</option>
+          ))}
+        </select>
+      </div>
       <div style={S.card}>
         <div style={S.rowBetween}>
           <div>
@@ -876,7 +909,7 @@ function Reportes({ data }) {
           const alumnos = data.students[h.id] || [];
           const activos = alumnos.filter((s) => s.active);
           const regs = data.attendance[h.id] || {};
-          const fechas = Object.keys(regs).filter((f) => (regs[f] || []).length >= 0).sort();
+          const fechas = filtrarFechas(Object.keys(regs).filter((f) => (regs[f] || []).length >= 0).sort());
           let pres = 0;
           fechas.forEach((f) => (pres += regs[f].length));
           const posibles = fechas.length * activos.length;
